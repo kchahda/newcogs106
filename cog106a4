@@ -1,0 +1,84 @@
+import unittest 
+import scipy as sci
+from scipy import stats 
+import matplotlib.pyplot as plt
+import numpy as np
+
+class SignalDetection:
+    def __init__(self, hits, misses, falseAlarms, correctRejections):
+        self.hits = hits
+        self.misses = misses
+        self.falseAlarms = falseAlarms
+        self.correctRejections = correctRejections
+        
+    def hit_rate(self):
+        self.hit_rate = self.hits/(self.hits+self.misses)
+        return self.hit_rate
+    
+    def false_alarm_rate(self):
+        self.false_alarm_rate = self.falseAlarms/(self.falseAlarms + self.correctRejections)
+        return self.false_alarm_rate
+    
+    def d_prime(self):
+        return (stats.norm.ppf(self.hit_rate()) - stats.norm.ppf(self.false_alarm_rate()))
+    
+    def criterion(self):
+        return((-0.5)*(stats.norm.ppf(self.hit_rate()) + stats.norm.ppf(self.false_alarm_rate())))
+    
+    def __add__(self, other):
+        return SignalDetection(self.hits + other.hits, self.misses + other.misses, self.falseAlarms + other.falseAlarms, self.correctRejections + other.correctRejections)
+
+    def __mul__(self, scalar):
+        return SignalDetection(self.hits * scalar, self.misses * scalar, self.falseAlarms * scalar, self.correctRejections * scalar)
+    
+    @staticmethod
+    def simulate(d_prime, criteriaList, signalCount, noiseCount):
+        sdtList = list()
+        for i in range(len(criteriaList)):
+            Criterion = criteriaList[i] + (d_prime/2)
+            hitRate = 1-stats.norm.cdf(Criterion-d_prime)
+            false_alarm_rate = 1-stats.norm.cdf(Criterion)
+            hits, falseAlarms = np.random.binomial(n=[signalCount,noiseCount], p=[hitRate, false_alarm_rate])
+            misses, correctRejections = signalCount-hits, noiseCount-falseAlarms
+            sdtList.append(SignalDetection(hits,misses,falseAlarms,correctRejections))
+        return sdtList
+    
+    @staticmethod
+    def plot_roc(sdtList):
+        for k in range(len(sdtList)):
+          x = [], y = []
+          x.append(sdtList[k].false_alarm_rate())
+          y.append(SignalDetection.rocCurve(x[k], SignalDetection.fit_roc(sdtList)))
+          plt.plot(sdtList[k].false_alarm_rate(), sdtList[k].hit_rate, 'o', color='black')
+          plt.plot([0,1], '--', color='green')
+          plt.xlim([0,1])
+          plt.ylim([0,1])
+          plt.plot(x, y, '-', color='red')
+          plt.title("ROC Plot")
+          plt.xlabel("False Alarm Rate")
+          plt.ylabel("Hit Rate")
+          plt.show()
+            
+    def nLogLikelihood(self, hitRate, false_alarm_rate):
+        return -self.hits*np.log(hitRate)-self.misses*np.log(1-hitRate)-self.falseAlarms*np.log(false_alarm_rate)-self.correctRejections*np.log(1-false_alarm_rate)
+                 
+    @staticmethod
+    def rocCurve(false_alarm_rate, a):
+        return stats.norm.cdf(a+stats.norm.ppf(false_alarm_rate))
+
+    @staticmethod
+    def rocLoss(a, sdtList):
+    
+      L = list()
+      for i in range(len(sdtList)):
+          predHitRate = sdt.rocCurve(sdtList[i].false_alarm_rate(), a)
+          L.append(Nlog(predHitRate, sdtList[i].false_alarm_rate()))
+      return sum(L)
+    
+    @staticmethod
+    def fit_roc(sdtList):
+        a = 0
+        fit = sci.optimize.minimize(fun=SignalDetection.rocLoss, x0=a, args= (sdtList))
+        aHat = fit.x
+        return aHat
+
